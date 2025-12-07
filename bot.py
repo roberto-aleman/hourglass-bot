@@ -278,6 +278,42 @@ def get_availability_from_state(
     return {day: list(slots) for day, slots in availability.items() if day in DAY_KEYS}
 
 
+def format_user_availability(state: dict[str, Any], user_id: int) -> str:
+    """Return a human-readable weekly availability summary for this user.
+
+    Uses get_availability_from_state and get_timezone_from_state.
+
+    Output format (exact and deterministic):
+
+    - First line: 'timezone: <tz>' or 'timezone: not set'
+    - Then one line per day in DAY_KEYS order:
+      '<day>: none' if that day's list is empty
+      '<day>: HH:MM-HH:MM' if there is exactly one interval
+
+    For v1 we ignore any extra intervals beyond the first if they somehow exist.
+    Relies on get_availability_from_state to return a normalized availability dict.
+    """
+    tz = get_timezone_from_state(state, user_id)
+    lines: list[str] = []
+
+    if tz:
+        lines.append(f"timezone: {tz}")
+    else:
+        lines.append("timezone: not set")
+
+    availability = get_availability_from_state(state, user_id)
+
+    for day in DAY_KEYS:
+        slots = availability[day]
+        if not slots:
+            lines.append(f"{day}: none")
+        else:
+            slot = slots[0]
+            lines.append(f"{day}: {slot['start']}-{slot['end']}")
+
+    return "\n".join(lines)
+
+
 class WheatleyClient(discord.Client):
     def __init__(self, *, intents: discord.Intents) -> None:
         super().__init__(intents=intents)
