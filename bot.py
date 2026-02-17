@@ -1,11 +1,10 @@
 import os
-from typing import Any
 
 import discord
 from discord import app_commands
 from dotenv import load_dotenv
 
-from state import load_state
+from state import Database
 
 load_dotenv()
 
@@ -24,7 +23,7 @@ GUILD = discord.Object(id=int(GUILD_ID))
 class WheatleyClient(discord.Client):
     def __init__(self, *, intents: discord.Intents) -> None:
         super().__init__(intents=intents)
-        self.state: dict[str, Any] = load_state()
+        self.db = Database()
         self.tree = app_commands.CommandTree(self)
 
     async def setup_hook(self) -> None:
@@ -38,7 +37,7 @@ class WheatleyClient(discord.Client):
             print("Logged in, but self.user is None")
             return
         print(f"Logged in as {user} (ID: {user.id})")
-        print(f"Number of users: {len(self.state['users'])}")
+        print(f"Number of users: {self.db.user_count()}")
         print("------")
 
 

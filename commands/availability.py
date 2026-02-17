@@ -3,18 +3,8 @@ from typing import cast
 import discord
 from discord import app_commands
 
-from state import (
-    DAY_KEYS,
-    format_user_availability,
-    get_timezone_from_state,
-    save_state,
-    set_day_availability_in_state,
-    set_timezone_in_state,
-    validate_time,
-    validate_timezone,
-)
+from state import DAY_KEYS, validate_time, validate_timezone
 
-# These will be set by bot.py after client creation
 client: discord.Client
 GUILD: discord.Object
 
@@ -40,14 +30,13 @@ def _register_commands() -> None:
             )
             return
         wheatley = cast(WheatleyClient, interaction.client)
-        set_timezone_in_state(wheatley.state, interaction.user.id, tz)
-        save_state(wheatley.state)
+        wheatley.db.set_timezone(interaction.user.id, tz)
         await interaction.response.send_message(f'Set "{tz}" as your timezone.', ephemeral=True)
 
     @tree.command(name="my-timezone", description="Show your saved timezone.", guild=GUILD)
     async def my_timezone(interaction: discord.Interaction) -> None:
         wheatley = cast(WheatleyClient, interaction.client)
-        tz = get_timezone_from_state(wheatley.state, interaction.user.id)
+        tz = wheatley.db.get_timezone(interaction.user.id)
         if tz:
             message = f"Your timezone: {tz}"
         else:
@@ -78,8 +67,7 @@ def _register_commands() -> None:
                 )
                 return
 
-        set_day_availability_in_state(wheatley.state, interaction.user.id, day_key, start, end)
-        save_state(wheatley.state)
+        wheatley.db.set_day_availability(interaction.user.id, day_key, start, end)
 
         if not start or not end:
             message = f"Cleared your availability on {day_key}."
@@ -90,5 +78,5 @@ def _register_commands() -> None:
     @tree.command(name="my-availability", description="Show your saved weekly availability.", guild=GUILD)
     async def my_availability(interaction: discord.Interaction) -> None:
         wheatley = cast(WheatleyClient, interaction.client)
-        summary = format_user_availability(wheatley.state, interaction.user.id)
+        summary = wheatley.db.format_availability(interaction.user.id)
         await interaction.response.send_message(summary, ephemeral=True)

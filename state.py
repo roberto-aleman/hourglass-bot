@@ -1,52 +1,33 @@
-import json
+import sqlite3
 from datetime import datetime
 from pathlib import Path
-from typing import Any
 from zoneinfo import ZoneInfo, available_timezones
 
 DAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
 
-# Path to the JSON state file: ./data/state.json next to this script
-STATE_PATH = Path(__file__).parent / "data" / "state.json"
+DB_PATH = Path(__file__).parent / "data" / "state.db"
 
-
-def _empty_availability() -> dict[str, list[dict[str, str]]]:
-    return {day: [] for day in DAY_KEYS}
-
-
-def load_state() -> dict[str, Any]:
-    """
-    Load bot state from data/state.json.
-
-    Returns a dict shaped like:
-        {"users": { "<user_id_str>": { "games": [..] }, ... }}
-
-    If the file is missing, invalid, or doesn't match this shape,
-    returns {"users": {}}.
-    """
-    try:
-        with STATE_PATH.open("r", encoding="utf-8") as f:
-            data = json.load(f)
-    except FileNotFoundError:
-        return {"users": {}}
-    except json.JSONDecodeError:
-        return {"users": {}}
-
-    if not isinstance(data, dict) or "users" not in data:
-        return {"users": {}}
-
-    if not isinstance(data["users"], dict):
-        data["users"] = {}
-
-    return data
-
-
-def save_state(state: dict[str, Any]) -> None:
-    """Save bot state back to data/state.json as pretty JSON."""
-    STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with STATE_PATH.open("w", encoding="utf-8") as f:
-        json.dump(state, f, indent=2, sort_keys=True)
-        f.write("\n")
+_SCHEMA = """
+CREATE TABLE IF NOT EXISTS users (
+    user_id TEXT PRIMARY KEY,
+    timezone TEXT
+);
+CREATE TABLE IF NOT EXISTS games (
+    user_id TEXT NOT NULL,
+    game_name TEXT NOT NULL,
+    normalized TEXT NOT NULL,
+    PRIMARY KEY (user_id, normalized),
+    FOREIGN KEY (user_id) REFERENCES users(user_id)
+);
+CREATE TABLE IF NOT EXISTS availability (
+    user_id TEXT NOT NULL,
+    day TEXT NOT NULL,
+    start_time TEXT NOT NULL,
+    end_time TEXT NOT NULL,
+    PRIMARY KEY (user_id, day),
+    FOREIGN KEY (user_id) REFERENCES users(user_id)
+);
+"""
 
 
 def normalize_game_name(name: str) -> str:
@@ -68,280 +49,184 @@ def validate_time(t: str) -> bool:
         return False
 
 
-def add_game_to_state(state: dict[str, Any], user_id: int, game_name: str) -> None:
-    """
-    Add or update a game for this user in `state`.
-
-    Matching is case- and whitespace-insensitive:
-    if a normalized match exists, replace it with `game_name`;
-    otherwise, append `game_name`.
-    """
-    user_key = str(user_id)
-    users = state["users"]
-
-    if user_key not in users:
-        users[user_key] = {"games": []}
-
-    games = users[user_key]["games"]
-    normalized_new = normalize_game_name(game_name)
-
-    for idx, existing in enumerate(games):
-        if normalize_game_name(existing) == normalized_new:
-            games[idx] = game_name
-            break
-    else:
-        games.append(game_name)
+def _empty_availability() -> dict[str, list[dict[str, str]]]:
+    return {day: [] for day in DAY_KEYS}
 
 
-def remove_game_from_state(state: dict[str, Any], user_id: int, game_name: str) -> bool:
-    """
-    Remove a game for this user in `state`.
+class Database:
+    def __init__(self, path: Path = DB_PATH) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        self.conn = sqlite3.connect(path)
+        self.conn.execute("PRAGMA journal_mode=WAL")
+        self.conn.execute("PRAGMA foreign_keys=ON")
+        self.conn.executescript(_SCHEMA)
 
-    Matching is case- and whitespace-insensitive:
-    if a normalized match exists, remove it and return True;
-    otherwise, return False.
-    """
-    user_key = str(user_id)
-    users = state["users"]
+    def close(self) -> None:
+        self.conn.close()
 
-    if user_key not in users:
-        return False
+    def _ensure_user(self, user_id: int) -> None:
+        self.conn.execute(
+            "INSERT OR IGNORE INTO users (user_id) VALUES (?)",
+            (str(user_id),),
+        )
 
-    user = users[user_key]
-    if "games" not in user:
-        return False
+    # --- Games ---
 
-    games = user["games"]
-    if not games:
-        return False
+    def add_game(self, user_id: int, game_name: str) -> None:
+        self._ensure_user(user_id)
+        normalized = normalize_game_name(game_name)
+        self.conn.execute(
+            "INSERT INTO games (user_id, game_name, normalized) VALUES (?, ?, ?) "
+            "ON CONFLICT (user_id, normalized) DO UPDATE SET game_name = excluded.game_name",
+            (str(user_id), game_name, normalized),
+        )
+        self.conn.commit()
 
-    normalized_query = normalize_game_name(game_name)
-    for game in games:
-        if normalize_game_name(game) == normalized_query:
-            games.remove(game)
-            return True
+    def remove_game(self, user_id: int, game_name: str) -> bool:
+        normalized = normalize_game_name(game_name)
+        cur = self.conn.execute(
+            "DELETE FROM games WHERE user_id = ? AND normalized = ?",
+            (str(user_id), normalized),
+        )
+        self.conn.commit()
+        return cur.rowcount > 0
 
-    return False
+    def list_games(self, user_id: int) -> list[str]:
+        rows = self.conn.execute(
+            "SELECT game_name FROM games WHERE user_id = ? ORDER BY rowid",
+            (str(user_id),),
+        ).fetchall()
+        return [r[0] for r in rows]
 
+    def get_common_games(self, user_id_a: int, user_id_b: int) -> list[str]:
+        rows = self.conn.execute(
+            "SELECT a.game_name FROM games a "
+            "JOIN games b ON a.normalized = b.normalized "
+            "WHERE a.user_id = ? AND b.user_id = ? "
+            "ORDER BY a.rowid",
+            (str(user_id_a), str(user_id_b)),
+        ).fetchall()
+        return [r[0] for r in rows]
 
-def list_games_from_state(state: dict[str, Any], user_id: int) -> list[str]:
-    """
-    Return a list of this user's games from `state`.
+    # --- Timezone ---
 
-    If the user or games list is missing, returns an empty list.
-    """
-    user_key = str(user_id)
-    users = state["users"]
+    def set_timezone(self, user_id: int, tz: str) -> None:
+        self._ensure_user(user_id)
+        self.conn.execute(
+            "UPDATE users SET timezone = ? WHERE user_id = ?",
+            (tz, str(user_id)),
+        )
+        self.conn.commit()
 
-    if user_key not in users:
-        return []
-
-    user = users[user_key]
-    if "games" not in user:
-        return []
-
-    return list(user["games"])
-
-
-def get_common_games(
-    state: dict[str, Any],
-    user_id_a: int,
-    user_id_b: int,
-) -> list[str]:
-    games_a = list_games_from_state(state, user_id_a)
-    games_b = list_games_from_state(state, user_id_b)
-
-    normalized_b = {normalize_game_name(name) for name in games_b}
-    common: list[str] = []
-
-    for name_a in games_a:
-        if normalize_game_name(name_a) in normalized_b:
-            common.append(name_a)
-
-    return common
-
-
-def set_timezone_in_state(state: dict[str, Any], user_id: int, tz: str) -> None:
-    """Set or update the user's timezone string in `state`."""
-    user_key = str(user_id)
-    users = state["users"]
-
-    if user_key not in users:
-        users[user_key] = {"games": [], "timezone": tz}
-    else:
-        user = users[user_key]
-        if "games" not in user:
-            user["games"] = []
-        user["timezone"] = tz
-
-
-def get_timezone_from_state(state: dict[str, Any], user_id: int) -> str | None:
-    user_key = str(user_id)
-    users = state["users"]
-
-    if user_key not in users:
+    def get_timezone(self, user_id: int) -> str | None:
+        row = self.conn.execute(
+            "SELECT timezone FROM users WHERE user_id = ?",
+            (str(user_id),),
+        ).fetchone()
+        if row and row[0]:
+            return row[0]
         return None
 
-    tz = users[user_key].get("timezone")
-    if isinstance(tz, str) and tz:
-        return tz
+    # --- Availability ---
 
-    return None
-
-
-def set_day_availability_in_state(
-    state: dict[str, Any],
-    user_id: int,
-    day: str,
-    start: str | None,
-    end: str | None,
-) -> None:
-    """
-    Set or clear availability for a single weekday in the user's local time.
-
-    - `day` is one of: "mon", "tue", "wed", "thu", "fri", "sat", "sun".
-    - If `start` or `end` is falsy (None or ""), the day's availability is cleared.
-    - Otherwise, availability[day] is set to a single interval: [{"start": start, "end": end}].
-    """
-    user_key = str(user_id)
-    users = state["users"]
-
-    if user_key not in users:
-        users[user_key] = {
-            "games": [],
-            "availability": _empty_availability(),
-        }
-
-    user = users[user_key]
-
-    if "availability" not in user or not isinstance(user["availability"], dict):
-        user["availability"] = _empty_availability()
-
-    availability = user["availability"]
-
-    for d in DAY_KEYS:
-        if d not in availability:
-            availability[d] = []
-
-    if not start or not end:
-        availability[day] = []
-    else:
-        availability[day] = [{"start": start, "end": end}]
-
-
-def get_availability_from_state(
-    state: dict[str, Any],
-    user_id: int,
-) -> dict[str, list[dict[str, str]]]:
-    """
-    Return the user's availability dict, normalized to have all 7 days.
-
-    The returned structure is a copy; mutating it will not change `state`.
-    """
-    user_key = str(user_id)
-    users = state["users"]
-
-    if user_key not in users:
-        return _empty_availability()
-
-    availability = users[user_key].get("availability")
-
-    if not isinstance(availability, dict):
-        return _empty_availability()
-
-    result = _empty_availability()
-    for day in DAY_KEYS:
-        if day in availability:
-            result[day] = list(availability[day])
-
-    return result
-
-
-def format_user_availability(state: dict[str, Any], user_id: int) -> str:
-    """Return a human-readable weekly availability summary for this user."""
-    tz = get_timezone_from_state(state, user_id)
-    lines: list[str] = []
-
-    if tz:
-        lines.append(f"timezone: {tz}")
-    else:
-        lines.append("timezone: not set")
-
-    availability = get_availability_from_state(state, user_id)
-
-    for day in DAY_KEYS:
-        slots = availability[day]
-        if not slots:
-            lines.append(f"{day}: none")
+    def set_day_availability(
+        self, user_id: int, day: str, start: str | None, end: str | None,
+    ) -> None:
+        self._ensure_user(user_id)
+        if not start or not end:
+            self.conn.execute(
+                "DELETE FROM availability WHERE user_id = ? AND day = ?",
+                (str(user_id), day),
+            )
         else:
-            slot = slots[0]
-            lines.append(f"{day}: {slot['start']}-{slot['end']}")
+            self.conn.execute(
+                "INSERT INTO availability (user_id, day, start_time, end_time) VALUES (?, ?, ?, ?) "
+                "ON CONFLICT (user_id, day) DO UPDATE SET start_time = excluded.start_time, end_time = excluded.end_time",
+                (str(user_id), day, start, end),
+            )
+        self.conn.commit()
 
-    return "\n".join(lines)
+    def get_availability(self, user_id: int) -> dict[str, list[dict[str, str]]]:
+        result = _empty_availability()
+        rows = self.conn.execute(
+            "SELECT day, start_time, end_time FROM availability WHERE user_id = ?",
+            (str(user_id),),
+        ).fetchall()
+        for day, start, end in rows:
+            if day in result:
+                result[day] = [{"start": start, "end": end}]
+        return result
 
+    def format_availability(self, user_id: int) -> str:
+        tz = self.get_timezone(user_id)
+        lines: list[str] = []
+        lines.append(f"timezone: {tz}" if tz else "timezone: not set")
 
-def is_user_available_now(
-    state: dict[str, Any],
-    user_id: int,
-    now_utc: datetime,
-) -> bool:
-    """Check if a user is available right now based on their timezone and availability."""
-    tz_name = get_timezone_from_state(state, user_id)
-    if not tz_name:
-        return False
+        availability = self.get_availability(user_id)
+        for day in DAY_KEYS:
+            slots = availability[day]
+            if not slots:
+                lines.append(f"{day}: none")
+            else:
+                slot = slots[0]
+                lines.append(f"{day}: {slot['start']}-{slot['end']}")
 
-    try:
-        tz = ZoneInfo(tz_name)
-    except (KeyError, ValueError):
-        return False
+        return "\n".join(lines)
 
-    local_now = now_utc.astimezone(tz)
-    day_key = DAY_KEYS[local_now.weekday()]  # weekday() 0=Mon matches DAY_KEYS[0]="mon"
+    # --- Matchmaking ---
 
-    availability = get_availability_from_state(state, user_id)
-    slots = availability[day_key]
+    def is_user_available_now(self, user_id: int, now_utc: datetime) -> bool:
+        tz_name = self.get_timezone(user_id)
+        if not tz_name:
+            return False
 
-    local_time_str = local_now.strftime("%H:%M")
-    for slot in slots:
-        if slot["start"] <= local_time_str < slot["end"]:
-            return True
+        try:
+            tz = ZoneInfo(tz_name)
+        except (KeyError, ValueError):
+            return False
 
-    return False
+        local_now = now_utc.astimezone(tz)
+        day_key = DAY_KEYS[local_now.weekday()]
+        local_time_str = local_now.strftime("%H:%M")
 
+        row = self.conn.execute(
+            "SELECT 1 FROM availability WHERE user_id = ? AND day = ? "
+            "AND start_time <= ? AND end_time > ?",
+            (str(user_id), day_key, local_time_str, local_time_str),
+        ).fetchone()
+        return row is not None
 
-def find_ready_players(
-    state: dict[str, Any],
-    invoker_id: int,
-    now_utc: datetime,
-    game_filter: str | None = None,
-) -> list[tuple[int, list[str]]]:
-    """
-    Find users who are available now and share games with the invoker.
+    def find_ready_players(
+        self, invoker_id: int, now_utc: datetime, game_filter: str | None = None,
+    ) -> list[tuple[int, list[str]]]:
+        rows = self.conn.execute(
+            "SELECT user_id FROM users WHERE user_id != ?",
+            (str(invoker_id),),
+        ).fetchall()
 
-    Returns a list of (user_id, [common_game_names]) sorted by user_id.
-    If game_filter is provided, only matches users who share that specific game.
-    """
-    results: list[tuple[int, list[str]]] = []
+        results: list[tuple[int, list[str]]] = []
+        for (user_key,) in rows:
+            other_id = int(user_key)
+            if not self.is_user_available_now(other_id, now_utc):
+                continue
 
-    for user_key in state["users"]:
-        other_id = int(user_key)
-        if other_id == invoker_id:
-            continue
-
-        if not is_user_available_now(state, other_id, now_utc):
-            continue
-
-        common = get_common_games(state, invoker_id, other_id)
-        if not common:
-            continue
-
-        if game_filter:
-            norm_filter = normalize_game_name(game_filter)
-            common = [g for g in common if normalize_game_name(g) == norm_filter]
+            common = self.get_common_games(invoker_id, other_id)
             if not common:
                 continue
 
-        results.append((other_id, common))
+            if game_filter:
+                norm_filter = normalize_game_name(game_filter)
+                common = [g for g in common if normalize_game_name(g) == norm_filter]
+                if not common:
+                    continue
 
-    results.sort(key=lambda x: x[0])
-    return results
+            results.append((other_id, common))
+
+        results.sort(key=lambda x: x[0])
+        return results
+
+    # --- Migration ---
+
+    def user_count(self) -> int:
+        row = self.conn.execute("SELECT COUNT(*) FROM users").fetchone()
+        return row[0] if row else 0

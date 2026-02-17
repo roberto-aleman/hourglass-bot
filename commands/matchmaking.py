@@ -4,8 +4,6 @@ from typing import cast
 import discord
 from discord import app_commands
 
-from state import find_ready_players
-
 client: discord.Client
 GUILD: discord.Object
 
@@ -27,7 +25,7 @@ def _register_commands() -> None:
         wheatley = cast(WheatleyClient, interaction.client)
         now_utc = datetime.now(timezone.utc)
 
-        matches = find_ready_players(wheatley.state, interaction.user.id, now_utc, game_filter=game)
+        matches = wheatley.db.find_ready_players(interaction.user.id, now_utc, game_filter=game)
 
         if not matches:
             if game:
