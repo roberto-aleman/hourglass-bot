@@ -137,9 +137,34 @@ class Database:
         self, user_id: int, day: str, start: str, end: str,
     ) -> None:
         self._ensure_user(user_id)
+        uid = str(user_id)
+
+        # Fetch existing slots for this day
+        rows = self.conn.execute(
+            "SELECT id, start_time, end_time FROM availability WHERE user_id = ? AND day = ?",
+            (uid, day),
+        ).fetchall()
+
+        new_start, new_end = start, end
+        ids_to_delete: list[int] = []
+
+        for row_id, s, e in rows:
+            # Check if the new slot overlaps or is adjacent to this existing slot
+            if new_start <= e and new_end >= s:
+                new_start = min(new_start, s)
+                new_end = max(new_end, e)
+                ids_to_delete.append(row_id)
+
+        if ids_to_delete:
+            placeholders = ",".join("?" * len(ids_to_delete))
+            self.conn.execute(
+                f"DELETE FROM availability WHERE id IN ({placeholders})",
+                ids_to_delete,
+            )
+
         self.conn.execute(
             "INSERT INTO availability (user_id, day, start_time, end_time) VALUES (?, ?, ?, ?)",
-            (str(user_id), day, start, end),
+            (uid, day, new_start, new_end),
         )
         self.conn.commit()
 
