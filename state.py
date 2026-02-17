@@ -230,3 +230,10 @@ class Database:
     def user_count(self) -> int:
         row = self.conn.execute("SELECT COUNT(*) FROM users").fetchone()
         return row[0] if row else 0
+
+    def all_game_names(self) -> list[str]:
+        """Return distinct game names across all users, ordered alphabetically."""
+        rows = self.conn.execute(
+            "SELECT DISTINCT game_name FROM games ORDER BY game_name",
+        ).fetchall()
+        return [r[0] for r in rows]

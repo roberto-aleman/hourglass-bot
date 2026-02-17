@@ -4,7 +4,7 @@ import discord
 from discord import app_commands
 
 from commands.helpers import BotClient, get_bot
-from state import Database
+from state import Database, normalize_game_name
 
 client: discord.Client
 GUILD: discord.Object
@@ -15,6 +15,32 @@ def setup(c: discord.Client, guild: discord.Object) -> None:
     client = c
     GUILD = guild
     _register_commands()
+
+
+async def _autocomplete_user_games(
+    interaction: discord.Interaction, current: str,
+) -> list[app_commands.Choice[str]]:
+    """Suggest from the invoker's own game list."""
+    bot = get_bot(interaction)
+    games = bot.db.list_games(interaction.user.id)
+    lower = current.lower()
+    return [
+        app_commands.Choice(name=g, value=g)
+        for g in games if lower in g.lower()
+    ][:25]
+
+
+async def _autocomplete_all_games(
+    interaction: discord.Interaction, current: str,
+) -> list[app_commands.Choice[str]]:
+    """Suggest from all known games across all users."""
+    bot = get_bot(interaction)
+    games = bot.db.all_game_names()
+    lower = current.lower()
+    return [
+        app_commands.Choice(name=g, value=g)
+        for g in games if lower in g.lower()
+    ][:25]
 
 
 class RemoveGameSelect(discord.ui.Select):
@@ -51,12 +77,14 @@ def _register_commands() -> None:
     tree = cast(BotClient, client).tree
 
     @tree.command(name="add-game", description="Add a game to your list.", guild=GUILD)
+    @app_commands.autocomplete(game=_autocomplete_all_games)
     async def add_game(interaction: discord.Interaction, game: str) -> None:
         bot = get_bot(interaction)
         bot.db.add_game(interaction.user.id, game)
         await interaction.response.send_message(f'Added "{game}" to your games.', ephemeral=True)
 
     @tree.command(name="remove-game", description="Remove a game from your list.", guild=GUILD)
+    @app_commands.autocomplete(game=_autocomplete_user_games)
     async def remove_game(interaction: discord.Interaction, game: str) -> None:
         bot = get_bot(interaction)
         removed = bot.db.remove_game(interaction.user.id, game)
