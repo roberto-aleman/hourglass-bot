@@ -1,33 +1,43 @@
+import logging
 import sqlite3
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+log = logging.getLogger(__name__)
+
 DAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
 
 DB_PATH = Path(__file__).parent / "data" / "state.db"
 
-_SCHEMA = """
-CREATE TABLE IF NOT EXISTS users (
-    user_id TEXT PRIMARY KEY,
-    timezone TEXT
-);
-CREATE TABLE IF NOT EXISTS games (
-    user_id TEXT NOT NULL,
-    game_name TEXT NOT NULL,
-    normalized TEXT NOT NULL,
-    PRIMARY KEY (user_id, normalized),
-    FOREIGN KEY (user_id) REFERENCES users(user_id)
-);
-CREATE TABLE IF NOT EXISTS availability (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id TEXT NOT NULL,
-    day TEXT NOT NULL,
-    start_time TEXT NOT NULL,
-    end_time TEXT NOT NULL,
-    FOREIGN KEY (user_id) REFERENCES users(user_id)
-);
-"""
+_MIGRATIONS: list[str] = [
+    # v1: initial schema
+    """
+    CREATE TABLE IF NOT EXISTS users (
+        user_id TEXT PRIMARY KEY,
+        timezone TEXT
+    );
+    CREATE TABLE IF NOT EXISTS games (
+        user_id TEXT NOT NULL,
+        game_name TEXT NOT NULL,
+        normalized TEXT NOT NULL,
+        PRIMARY KEY (user_id, normalized),
+        FOREIGN KEY (user_id) REFERENCES users(user_id)
+    );
+    """,
+    # v2: multi-slot availability (replaces old single-slot table)
+    """
+    DROP TABLE IF EXISTS availability;
+    CREATE TABLE availability (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id TEXT NOT NULL,
+        day TEXT NOT NULL,
+        start_time TEXT NOT NULL,
+        end_time TEXT NOT NULL,
+        FOREIGN KEY (user_id) REFERENCES users(user_id)
+    );
+    """,
+]
 
 
 def normalize_game_name(name: str) -> str:
@@ -95,15 +105,24 @@ class Database:
         self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.execute("PRAGMA foreign_keys=ON")
         self._migrate()
-        self.conn.executescript(_SCHEMA)
 
     def _migrate(self) -> None:
-        """Drop old availability table if it has the single-slot schema."""
-        row = self.conn.execute(
-            "SELECT sql FROM sqlite_master WHERE type='table' AND name='availability'",
-        ).fetchone()
-        if row and "PRIMARY KEY (user_id, day)" in row[0]:
-            self.conn.execute("DROP TABLE availability")
+        self.conn.execute(
+            "CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL)",
+        )
+        row = self.conn.execute("SELECT version FROM schema_version").fetchone()
+        current = row[0] if row else 0
+
+        for i, sql in enumerate(_MIGRATIONS[current:], start=current):
+            log.info("Applying migration v%s", i + 1)
+            self.conn.executescript(sql)
+
+        new_version = len(_MIGRATIONS)
+        if current == 0:
+            self.conn.execute("INSERT INTO schema_version (version) VALUES (?)", (new_version,))
+        elif new_version > current:
+            self.conn.execute("UPDATE schema_version SET version = ?", (new_version,))
+        self.conn.commit()
 
     def close(self) -> None:
         self.conn.close()
