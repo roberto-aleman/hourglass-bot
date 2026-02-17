@@ -6,6 +6,15 @@ from discord import app_commands
 from commands.helpers import BotClient, get_bot
 from state import DAY_KEYS, validate_time, validate_timezone
 
+US_TIMEZONES = [
+    app_commands.Choice(name="Eastern", value="US/Eastern"),
+    app_commands.Choice(name="Central", value="US/Central"),
+    app_commands.Choice(name="Mountain", value="US/Mountain"),
+    app_commands.Choice(name="Pacific", value="US/Pacific"),
+    app_commands.Choice(name="Alaska", value="US/Alaska"),
+    app_commands.Choice(name="Hawaii", value="US/Hawaii"),
+]
+
 client: discord.Client
 GUILD: discord.Object
 
@@ -21,16 +30,11 @@ def _register_commands() -> None:
     tree = cast(BotClient, client).tree
 
     @tree.command(name="set-timezone", description="Set your timezone.", guild=GUILD)
-    async def set_timezone(interaction: discord.Interaction, tz: str) -> None:
-        if not validate_timezone(tz):
-            await interaction.response.send_message(
-                f'"{tz}" is not a valid timezone. Use an IANA name like "America/New_York".',
-                ephemeral=True,
-            )
-            return
+    @app_commands.choices(tz=US_TIMEZONES)
+    async def set_timezone(interaction: discord.Interaction, tz: app_commands.Choice[str]) -> None:
         bot = get_bot(interaction)
-        bot.db.set_timezone(interaction.user.id, tz)
-        await interaction.response.send_message(f'Set "{tz}" as your timezone.', ephemeral=True)
+        bot.db.set_timezone(interaction.user.id, tz.value)
+        await interaction.response.send_message(f'Set your timezone to {tz.name} ({tz.value}).', ephemeral=True)
 
     @tree.command(name="my-timezone", description="Show your saved timezone.", guild=GUILD)
     async def my_timezone(interaction: discord.Interaction) -> None:
