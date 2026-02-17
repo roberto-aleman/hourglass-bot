@@ -5,7 +5,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-import bot
+import state as st
 
 
 def test_normalize_game_name_whitespace_and_case() -> None:
@@ -15,7 +15,7 @@ def test_normalize_game_name_whitespace_and_case() -> None:
     - lowercase the string
     """
     raw = " HelL DiverS  2  "
-    normalized = bot.normalize_game_name(raw)
+    normalized = st.normalize_game_name(raw)
     assert normalized == "helldivers2"
 
 
@@ -27,8 +27,8 @@ def test_add_game_to_state_merges_duplicates() -> None:
     """
     state = {"users": {}}
 
-    bot.add_game_to_state(state, user_id=123, game_name="Helldivers 2")
-    bot.add_game_to_state(state, user_id=123, game_name="  helL DiverS  2   ")
+    st.add_game_to_state(state, user_id=123, game_name="Helldivers 2")
+    st.add_game_to_state(state, user_id=123, game_name="  helL DiverS  2   ")
 
     games = state["users"]["123"]["games"]
 
@@ -46,11 +46,11 @@ def test_remove_game_from_state_removes_matching_game() -> None:
     state = {"users": {}}
 
     # Start with two games for the same user
-    bot.add_game_to_state(state, user_id=123, game_name="Helldivers 2")
-    bot.add_game_to_state(state, user_id=123, game_name="Balatro")
+    st.add_game_to_state(state, user_id=123, game_name="Helldivers 2")
+    st.add_game_to_state(state, user_id=123, game_name="Balatro")
 
     # Remove Helldivers using different case/spacing
-    removed = bot.remove_game_from_state(
+    removed = st.remove_game_from_state(
         state,
         user_id=123,
         game_name="  helL DiverS  2   ",
@@ -71,13 +71,13 @@ def test_list_games_from_state_returns_user_games() -> None:
     """
     state = {"users": {}}
 
-    bot.add_game_to_state(state, user_id=123, game_name="Helldivers 2")
-    bot.add_game_to_state(state, user_id=123, game_name="Balatro")
+    st.add_game_to_state(state, user_id=123, game_name="Helldivers 2")
+    st.add_game_to_state(state, user_id=123, game_name="Balatro")
 
-    games = bot.list_games_from_state(state, user_id=123)
+    games = st.list_games_from_state(state, user_id=123)
     assert games == ["Helldivers 2", "Balatro"]
 
-    games = bot.list_games_from_state(state, user_id=999)
+    games = st.list_games_from_state(state, user_id=999)
     assert games == []
 
 
@@ -90,11 +90,11 @@ def test_get_common_games_returns_users_common_games() -> None:
     """
     state = {"users": {}}
 
-    bot.add_game_to_state(state, user_id=123, game_name="Helldivers 2")
-    bot.add_game_to_state(state, user_id=123, game_name="Balatro")
-    bot.add_game_to_state(state, user_id=999, game_name="  helL DiverS  2   ")
+    st.add_game_to_state(state, user_id=123, game_name="Helldivers 2")
+    st.add_game_to_state(state, user_id=123, game_name="Balatro")
+    st.add_game_to_state(state, user_id=999, game_name="  helL DiverS  2   ")
 
-    games = bot.get_common_games(state, user_id_a=123, user_id_b=999)
+    games = st.get_common_games(state, user_id_a=123, user_id_b=999)
     assert games == ["Helldivers 2"]
 
 
@@ -106,7 +106,7 @@ def test_set_timezone_sets_users_timezone() -> None:
     """
     state = {"users": {}}
 
-    bot.set_timezone_in_state(state, user_id=123, tz="America/Los_Angeles")
+    st.set_timezone_in_state(state, user_id=123, tz="America/Los_Angeles")
     tz = state["users"]["123"]["timezone"]
     assert tz == "America/Los_Angeles"
 
@@ -119,12 +119,12 @@ def test_get_timezone_from_state_returns_users_timezone() -> None:
     """
     state = {"users": {}}
 
-    bot.set_timezone_in_state(state, user_id=123, tz="America/Los_Angeles")
+    st.set_timezone_in_state(state, user_id=123, tz="America/Los_Angeles")
 
-    tz = bot.get_timezone_from_state(state, user_id=123)
+    tz = st.get_timezone_from_state(state, user_id=123)
     assert tz == "America/Los_Angeles"
 
-    tz = bot.get_timezone_from_state(state, user_id=999)
+    tz = st.get_timezone_from_state(state, user_id=999)
     assert tz is None
 
 
@@ -137,7 +137,7 @@ def test_set_day_availability_creates_user_and_initial_availability() -> None:
     """
     state = {"users": {}}
 
-    bot.set_day_availability_in_state(
+    st.set_day_availability_in_state(
         state,
         user_id=123,
         day="mon",
@@ -150,12 +150,12 @@ def test_set_day_availability_creates_user_and_initial_availability() -> None:
 
     availability = user["availability"]
     # All day keys should exist
-    for day in bot.DAY_KEYS:
+    for day in st.DAY_KEYS:
         assert day in availability
 
     # Only Monday should have a slot; others should be empty
     assert availability["mon"] == [{"start": "18:00", "end": "22:00"}]
-    for day in bot.DAY_KEYS:
+    for day in st.DAY_KEYS:
         if day != "mon":
             assert availability[day] == []
 
@@ -167,14 +167,14 @@ def test_set_day_availability_overwrites_existing_interval() -> None:
     """
     state = {"users": {}}
 
-    bot.set_day_availability_in_state(
+    st.set_day_availability_in_state(
         state,
         user_id=123,
         day="fri",
         start="18:00",
         end="22:00",
     )
-    bot.set_day_availability_in_state(
+    st.set_day_availability_in_state(
         state,
         user_id=123,
         day="fri",
@@ -196,7 +196,7 @@ def test_set_day_availability_clears_day_when_start_or_end_missing() -> None:
     state = {"users": {}}
 
     # Start with a defined interval
-    bot.set_day_availability_in_state(
+    st.set_day_availability_in_state(
         state,
         user_id=123,
         day="wed",
@@ -205,7 +205,7 @@ def test_set_day_availability_clears_day_when_start_or_end_missing() -> None:
     )
 
     # Clear using None values
-    bot.set_day_availability_in_state(
+    st.set_day_availability_in_state(
         state,
         user_id=123,
         day="wed",
@@ -225,10 +225,10 @@ def test_get_availability_returns_all_days_empty_for_missing_user() -> None:
     """
     state = {"users": {}}
 
-    availability = bot.get_availability_from_state(state, user_id=123)
+    availability = st.get_availability_from_state(state, user_id=123)
 
     # All DAY_KEYS present, all empty lists
-    for day in bot.DAY_KEYS:
+    for day in st.DAY_KEYS:
         assert day in availability
         assert availability[day] == []
 
@@ -254,17 +254,17 @@ def test_get_availability_normalizes_partial_availability() -> None:
         }
     }
 
-    availability = bot.get_availability_from_state(state, user_id=123)
+    availability = st.get_availability_from_state(state, user_id=123)
 
     # Existing day preserved
     assert availability["mon"] == [{"start": "18:00", "end": "22:00"}]
 
     # All DAY_KEYS present
-    for day in bot.DAY_KEYS:
+    for day in st.DAY_KEYS:
         assert day in availability
 
     # Days that were not originally present should be empty
-    for day in bot.DAY_KEYS:
+    for day in st.DAY_KEYS:
         if day != "mon":
             assert availability[day] == []
 
@@ -286,7 +286,7 @@ def test_get_availability_returns_copies_not_backed_by_state() -> None:
         }
     }
 
-    availability = bot.get_availability_from_state(state, user_id=123)
+    availability = st.get_availability_from_state(state, user_id=123)
 
     # Mutate the returned structure
     availability["mon"].append({"start": "10:00", "end": "12:00"})
@@ -302,14 +302,14 @@ def test_get_availability_returns_copies_not_backed_by_state() -> None:
 def test_format_user_availability_missing_user() -> None:
     state = {"users": {}}
 
-    msg = bot.format_user_availability(state, user_id=123)
+    msg = st.format_user_availability(state, user_id=123)
     lines = msg.splitlines()
 
     assert lines[0] == "timezone: not set"
-    assert len(lines) == 1 + len(bot.DAY_KEYS)
+    assert len(lines) == 1 + len(st.DAY_KEYS)
 
     days = [line.split(":")[0] for line in lines[1:]]
-    assert days == bot.DAY_KEYS
+    assert days == st.DAY_KEYS
 
     for line in lines[1:]:
         assert line.endswith("none")
@@ -317,8 +317,8 @@ def test_format_user_availability_missing_user() -> None:
 
 def test_format_user_availability_with_timezone_and_single_day() -> None:
     state = {"users": {}}
-    bot.set_timezone_in_state(state, user_id=123, tz="America/Los_Angeles")
-    bot.set_day_availability_in_state(
+    st.set_timezone_in_state(state, user_id=123, tz="America/Los_Angeles")
+    st.set_day_availability_in_state(
         state,
         user_id=123,
         day="fri",
@@ -326,14 +326,14 @@ def test_format_user_availability_with_timezone_and_single_day() -> None:
         end="22:00",
     )
 
-    msg = bot.format_user_availability(state, user_id=123)
+    msg = st.format_user_availability(state, user_id=123)
     lines = msg.splitlines()
 
     assert lines[0] == "timezone: America/Los_Angeles"
 
     day_to_text = {line.split(":")[0]: line.split(": ")[1] for line in lines[1:]}
 
-    for day in bot.DAY_KEYS:
+    for day in st.DAY_KEYS:
         if day == "fri":
             assert day_to_text[day] == "18:00-22:00"
         else:
@@ -352,7 +352,7 @@ def test_format_user_availability_normalizes_partial_availability() -> None:
         }
     }
 
-    msg = bot.format_user_availability(state, user_id=123)
+    msg = st.format_user_availability(state, user_id=123)
     lines = msg.splitlines()
 
     assert lines[0] == "timezone: not set"
@@ -361,6 +361,6 @@ def test_format_user_availability_normalizes_partial_availability() -> None:
 
     assert day_to_text["mon"] == "10:00-12:00"
 
-    for day in bot.DAY_KEYS:
+    for day in st.DAY_KEYS:
         if day != "mon":
             assert day_to_text[day] == "none"
