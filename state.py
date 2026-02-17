@@ -2,7 +2,7 @@ import json
 from datetime import datetime
 from pathlib import Path
 from typing import Any
-from zoneinfo import available_timezones
+from zoneinfo import ZoneInfo, available_timezones
 
 DAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
 
@@ -278,3 +278,70 @@ def format_user_availability(state: dict[str, Any], user_id: int) -> str:
             lines.append(f"{day}: {slot['start']}-{slot['end']}")
 
     return "\n".join(lines)
+
+
+def is_user_available_now(
+    state: dict[str, Any],
+    user_id: int,
+    now_utc: datetime,
+) -> bool:
+    """Check if a user is available right now based on their timezone and availability."""
+    tz_name = get_timezone_from_state(state, user_id)
+    if not tz_name:
+        return False
+
+    try:
+        tz = ZoneInfo(tz_name)
+    except (KeyError, ValueError):
+        return False
+
+    local_now = now_utc.astimezone(tz)
+    day_key = DAY_KEYS[local_now.weekday()]  # weekday() 0=Mon matches DAY_KEYS[0]="mon"
+
+    availability = get_availability_from_state(state, user_id)
+    slots = availability[day_key]
+
+    local_time_str = local_now.strftime("%H:%M")
+    for slot in slots:
+        if slot["start"] <= local_time_str < slot["end"]:
+            return True
+
+    return False
+
+
+def find_ready_players(
+    state: dict[str, Any],
+    invoker_id: int,
+    now_utc: datetime,
+    game_filter: str | None = None,
+) -> list[tuple[int, list[str]]]:
+    """
+    Find users who are available now and share games with the invoker.
+
+    Returns a list of (user_id, [common_game_names]) sorted by user_id.
+    If game_filter is provided, only matches users who share that specific game.
+    """
+    results: list[tuple[int, list[str]]] = []
+
+    for user_key in state["users"]:
+        other_id = int(user_key)
+        if other_id == invoker_id:
+            continue
+
+        if not is_user_available_now(state, other_id, now_utc):
+            continue
+
+        common = get_common_games(state, invoker_id, other_id)
+        if not common:
+            continue
+
+        if game_filter:
+            norm_filter = normalize_game_name(game_filter)
+            common = [g for g in common if normalize_game_name(g) == norm_filter]
+            if not common:
+                continue
+
+        results.append((other_id, common))
+
+    results.sort(key=lambda x: x[0])
+    return results

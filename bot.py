@@ -46,10 +46,11 @@ intents = discord.Intents.default()
 client = WheatleyClient(intents=intents)
 
 # Register all command modules
-from commands import games, availability  # noqa: E402
+from commands import games, availability, matchmaking  # noqa: E402
 
 games.setup(client, GUILD)
 availability.setup(client, GUILD)
+matchmaking.setup(client, GUILD)
 
 if __name__ == "__main__":
     client.run(TOKEN)
