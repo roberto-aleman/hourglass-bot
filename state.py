@@ -242,31 +242,30 @@ class Database:
     # --- Matchmaking ---
 
     def _available_user_ids(self, now_utc: datetime) -> set[int]:
-        """Return user IDs that are available right now, filtering in bulk."""
+        """Return user IDs that are available right now."""
         rows = self.conn.execute(
-            "SELECT u.user_id, u.timezone FROM users u "
-            "WHERE u.timezone IS NOT NULL "
-            "AND EXISTS (SELECT 1 FROM availability a WHERE a.user_id = u.user_id)",
+            "SELECT u.user_id, u.timezone, a.day, a.start_time, a.end_time "
+            "FROM users u "
+            "JOIN availability a ON a.user_id = u.user_id "
+            "WHERE u.timezone IS NOT NULL",
         ).fetchall()
 
         available: set[int] = set()
-        for uid_str, tz_name in rows:
+        for uid_str, tz_name, day, start, end in rows:
+            uid = int(uid_str)
+            if uid in available:
+                continue
             try:
                 tz = ZoneInfo(tz_name)
             except (KeyError, ValueError):
                 continue
 
             local_now = now_utc.astimezone(tz)
-            today = DAY_KEYS[local_now.weekday()]
+            if day != DAY_KEYS[local_now.weekday()]:
+                continue
             now_str = local_now.strftime("%H:%M")
-
-            row = self.conn.execute(
-                "SELECT 1 FROM availability WHERE user_id = ? AND day = ? "
-                "AND start_time <= ? AND end_time > ?",
-                (uid_str, today, now_str, now_str),
-            ).fetchone()
-            if row:
-                available.add(int(uid_str))
+            if start <= now_str < end:
+                available.add(uid)
 
         return available
 
