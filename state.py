@@ -65,38 +65,13 @@ def _uid(user_id: int) -> str:
 
 
 def _slots_overlap(s1_start: str, s1_end: str, s2_start: str, s2_end: str) -> bool:
-    """Check if two time slots overlap or are adjacent (shared boundary), handling overnight slots."""
-    # For overnight slots (start >= end), they always span to midnight and from midnight,
-    # so treat them as two ranges: [start, 24:00) and [00:00, end)
-    def ranges(s: str, e: str) -> list[tuple[str, str]]:
-        if s < e:
-            return [(s, e)]
-        # overnight: e.g. 22:00-02:00 → [22:00, 24:00) + [00:00, 02:00)
-        return [(s, "24:00"), ("00:00", e)]
-
-    for a_s, a_e in ranges(s1_start, s1_end):
-        for b_s, b_e in ranges(s2_start, s2_end):
-            if a_s <= b_e and a_e >= b_s:
-                return True
-    return False
+    """Check if two normal (non-overnight) slots overlap or share a boundary."""
+    return s1_start <= s2_end and s1_end >= s2_start
 
 
 def _merge_slot(existing_start: str, existing_end: str, new_start: str, new_end: str) -> tuple[str, str]:
-    """Merge two overlapping slots, handling overnight correctly."""
-    e_overnight = existing_start >= existing_end
-    n_overnight = new_start >= new_end
-
-    # Both normal slots
-    if not e_overnight and not n_overnight:
-        return min(existing_start, new_start), max(existing_end, new_end)
-    # Both overnight
-    if e_overnight and n_overnight:
-        return min(existing_start, new_start), max(existing_end, new_end)
-    # Mixed: one normal, one overnight — result is overnight
-    # Take the earlier start; for end, the overnight end (small hour) wins
-    if e_overnight:
-        return min(existing_start, new_start), existing_end
-    return min(existing_start, new_start), new_end
+    """Merge two overlapping normal slots."""
+    return min(existing_start, new_start), max(existing_end, new_end)
 
 
 class Database:
@@ -193,16 +168,8 @@ class Database:
 
     # --- Availability ---
 
-    def add_day_availability(
-        self, user_id: int, day: str, start: str, end: str,
-    ) -> None:
-        if day not in DAY_KEYS:
-            raise ValueError(f"Invalid day: {day!r}")
-        if start == end:
-            raise ValueError("Start and end times must differ")
-        self._ensure_user(user_id)
-        uid = _uid(user_id)
-
+    def _add_normal_slot(self, uid: str, day: str, start: str, end: str) -> None:
+        """Insert a single normal (non-overnight) slot, merging with existing overlaps."""
         rows = self.conn.execute(
             "SELECT id, start_time, end_time FROM availability WHERE user_id = ? AND day = ?",
             (uid, day),
@@ -227,6 +194,25 @@ class Database:
             "INSERT INTO availability (user_id, day, start_time, end_time) VALUES (?, ?, ?, ?)",
             (uid, day, new_start, new_end),
         )
+
+    def add_day_availability(
+        self, user_id: int, day: str, start: str, end: str,
+    ) -> None:
+        if day not in DAY_KEYS:
+            raise ValueError(f"Invalid day: {day!r}")
+        if start == end:
+            raise ValueError("Start and end times must differ")
+        self._ensure_user(user_id)
+        uid = _uid(user_id)
+
+        if start < end:
+            self._add_normal_slot(uid, day, start, end)
+        else:
+            # Overnight: split at midnight into two normal slots
+            next_day = DAY_KEYS[(DAY_KEYS.index(day) + 1) % 7]
+            self._add_normal_slot(uid, day, start, "24:00")
+            self._add_normal_slot(uid, next_day, "00:00", end)
+
         self.conn.commit()
 
     def clear_day_availability(self, user_id: int, day: str) -> None:
@@ -268,34 +254,12 @@ class Database:
 
             local_now = now_utc.astimezone(tz)
             today = DAY_KEYS[local_now.weekday()]
-            yesterday = DAY_KEYS[(local_now.weekday() - 1) % 7]
             now_str = local_now.strftime("%H:%M")
 
-            # Normal window: start < end (e.g. 18:00–22:00)
             row = self.conn.execute(
                 "SELECT 1 FROM availability WHERE user_id = ? AND day = ? "
-                "AND start_time < end_time AND start_time <= ? AND end_time > ?",
+                "AND start_time <= ? AND end_time > ?",
                 (uid_str, today, now_str, now_str),
-            ).fetchone()
-            if row:
-                available.add(int(uid_str))
-                continue
-
-            # Today's window spans midnight (start >= end), currently past start
-            row = self.conn.execute(
-                "SELECT 1 FROM availability WHERE user_id = ? AND day = ? "
-                "AND start_time >= end_time AND start_time <= ?",
-                (uid_str, today, now_str),
-            ).fetchone()
-            if row:
-                available.add(int(uid_str))
-                continue
-
-            # Yesterday's window spans midnight, we're in the early-morning portion
-            row = self.conn.execute(
-                "SELECT 1 FROM availability WHERE user_id = ? AND day = ? "
-                "AND start_time >= end_time AND end_time > ?",
-                (uid_str, yesterday, now_str),
             ).fetchone()
             if row:
                 available.add(int(uid_str))
