@@ -300,9 +300,6 @@ class Database:
 
         return available
 
-    def is_user_available_now(self, user_id: int, now_utc: datetime) -> bool:
-        return user_id in self._available_user_ids(now_utc)
-
     def find_ready_players(
         self, invoker_id: int, now_utc: datetime, game_filter: str | None = None,
     ) -> list[tuple[int, list[str]]]:
