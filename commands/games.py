@@ -50,12 +50,14 @@ class GamesCog(commands.Cog):
         return self.bot.db  # type: ignore[attr-defined]
 
     @app_commands.command(name="add-game", description="Add a game to your list.")
+    @app_commands.describe(game="Name of the game to add")
     @app_commands.autocomplete(game=autocomplete_all_games)
     async def add_game(self, interaction: discord.Interaction, game: str) -> None:
         self.db.add_game(interaction.user.id, game)
         await interaction.response.send_message(f'Added "{game}" to your games.', ephemeral=True)
 
     @app_commands.command(name="remove-game", description="Remove a game from your list.")
+    @app_commands.describe(game="Name of the game to remove")
     @app_commands.autocomplete(game=autocomplete_user_games)
     async def remove_game(self, interaction: discord.Interaction, game: str) -> None:
         removed = self.db.remove_game(interaction.user.id, game)
@@ -83,6 +85,7 @@ class GamesCog(commands.Cog):
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @app_commands.command(name="common-games", description="Show games you have in common with another user.")
+    @app_commands.describe(other="The user to compare games with")
     async def common_games(self, interaction: discord.Interaction, other: discord.User) -> None:
         common = self.db.get_common_games(interaction.user.id, other.id)
         if not common:

@@ -26,6 +26,7 @@ class AvailabilityCog(commands.Cog):
         return self.bot.db  # type: ignore[attr-defined]
 
     @app_commands.command(name="set-timezone", description="Set your timezone.")
+    @app_commands.describe(tz="Your timezone")
     @app_commands.choices(tz=US_TIMEZONES)
     async def set_timezone(self, interaction: discord.Interaction, tz: app_commands.Choice[str]) -> None:
         self.db.set_timezone(interaction.user.id, tz.value)
@@ -41,6 +42,7 @@ class AvailabilityCog(commands.Cog):
         await interaction.response.send_message(message, ephemeral=True)
 
     @app_commands.command(name="set-availability", description="Add a time slot for a weekday.")
+    @app_commands.describe(day="Day of the week", start="Start time (HH:MM)", end="End time (HH:MM, can be past midnight)")
     @app_commands.choices(day=DAY_CHOICES)
     async def set_availability(
         self, interaction: discord.Interaction,
@@ -66,6 +68,7 @@ class AvailabilityCog(commands.Cog):
         )
 
     @app_commands.command(name="clear-availability", description="Clear all time slots for a weekday.")
+    @app_commands.describe(day="Day of the week to clear")
     @app_commands.choices(day=DAY_CHOICES)
     async def clear_availability(
         self, interaction: discord.Interaction,

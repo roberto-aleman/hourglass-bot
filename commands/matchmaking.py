@@ -17,6 +17,7 @@ class MatchmakingCog(commands.Cog):
         return self.bot.db  # type: ignore[attr-defined]
 
     @app_commands.command(name="ready-to-play", description="Find available players who share your games.")
+    @app_commands.describe(game="Filter results to a specific game")
     @app_commands.autocomplete(game=autocomplete_user_games)
     async def ready_to_play(self, interaction: discord.Interaction, game: str | None = None) -> None:
         now_utc = datetime.now(timezone.utc)
