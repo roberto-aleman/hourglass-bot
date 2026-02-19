@@ -273,13 +273,12 @@ class Database:
         for offset in range(7):
             day_idx = (now_day_idx + offset) % 7
             day = DAY_KEYS[day_idx]
-            for _, start, end in [(d, s, e) for d, s, e in rows if d == day]:
-                if offset == 0:
-                    # Today: slot must not have ended yet
-                    if now_str < end:
-                        return (day, start, end)
-                else:
-                    return (day, start, end)
+            for d, start, end in rows:
+                if d != day:
+                    continue
+                if offset == 0 and now_str >= end:
+                    continue
+                return (day, start, end)
 
         return None
 

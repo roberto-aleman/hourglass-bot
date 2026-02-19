@@ -8,6 +8,7 @@ from commands.helpers import EMBED_COLOR
 from state import DAY_KEYS, Database, validate_time
 
 _ALL_TIMEZONES = sorted(available_timezones())
+_ALL_TIMEZONES_SET = set(_ALL_TIMEZONES)
 
 DAY_CHOICES = [app_commands.Choice(name=d, value=d) for d in DAY_KEYS]
 
@@ -34,7 +35,7 @@ class AvailabilityCog(commands.Cog):
     @app_commands.describe(tz="Your timezone (e.g. US/Eastern, Europe/London)")
     @app_commands.autocomplete(tz=autocomplete_timezone)
     async def set_timezone(self, interaction: discord.Interaction, tz: str) -> None:
-        if tz not in _ALL_TIMEZONES:
+        if tz not in _ALL_TIMEZONES_SET:
             await interaction.response.send_message(
                 f'"{tz}" is not a valid timezone. Start typing to see suggestions.', ephemeral=True,
             )
