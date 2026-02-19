@@ -151,6 +151,15 @@ class Database:
         ).fetchall()
         return [r[0] for r in rows]
 
+    def get_users_for_game(self, game_name: str) -> list[int]:
+        """Return user IDs that have a given game."""
+        normalized = normalize_game_name(game_name)
+        rows = self.conn.execute(
+            "SELECT user_id FROM games WHERE normalized = ? ORDER BY rowid",
+            (normalized,),
+        ).fetchall()
+        return [int(r[0]) for r in rows]
+
     # --- Timezone ---
 
     def set_timezone(self, user_id: int, tz: str) -> None:

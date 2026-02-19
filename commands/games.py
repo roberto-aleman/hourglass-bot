@@ -108,5 +108,21 @@ class GamesCog(commands.Cog):
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
+    @app_commands.command(name="who-plays", description="List all users who have a specific game.")
+    @app_commands.describe(game="Name of the game")
+    @app_commands.autocomplete(game=autocomplete_all_games)
+    async def who_plays(self, interaction: discord.Interaction, game: str) -> None:
+        user_ids = self.db.get_users_for_game(game)
+        if not user_ids:
+            await interaction.response.send_message(f'No one has "{game}" in their list.', ephemeral=True)
+            return
+        embed = discord.Embed(
+            title=f"Who Plays {game}",
+            description="\n".join(f"• <@{uid}>" for uid in user_ids),
+            color=EMBED_COLOR,
+        )
+        await interaction.response.send_message(embed=embed)
+
+
 async def setup(bot: commands.Bot) -> None:
     await bot.add_cog(GamesCog(bot))
