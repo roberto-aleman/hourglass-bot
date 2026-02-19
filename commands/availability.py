@@ -1,3 +1,5 @@
+from zoneinfo import available_timezones
+
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -5,16 +7,19 @@ from discord.ext import commands
 from commands.helpers import EMBED_COLOR
 from state import DAY_KEYS, Database, validate_time
 
-US_TIMEZONES = [
-    app_commands.Choice(name="Eastern", value="US/Eastern"),
-    app_commands.Choice(name="Central", value="US/Central"),
-    app_commands.Choice(name="Mountain", value="US/Mountain"),
-    app_commands.Choice(name="Pacific", value="US/Pacific"),
-    app_commands.Choice(name="Alaska", value="US/Alaska"),
-    app_commands.Choice(name="Hawaii", value="US/Hawaii"),
-]
+_ALL_TIMEZONES = sorted(available_timezones())
 
 DAY_CHOICES = [app_commands.Choice(name=d, value=d) for d in DAY_KEYS]
+
+
+async def autocomplete_timezone(
+    interaction: discord.Interaction, current: str,
+) -> list[app_commands.Choice[str]]:
+    lower = current.lower()
+    return [
+        app_commands.Choice(name=tz, value=tz)
+        for tz in _ALL_TIMEZONES if lower in tz.lower()
+    ][:25]
 
 
 class AvailabilityCog(commands.Cog):
@@ -26,11 +31,16 @@ class AvailabilityCog(commands.Cog):
         return self.bot.db  # type: ignore[attr-defined]
 
     @app_commands.command(name="set-timezone", description="Set your timezone.")
-    @app_commands.describe(tz="Your timezone")
-    @app_commands.choices(tz=US_TIMEZONES)
-    async def set_timezone(self, interaction: discord.Interaction, tz: app_commands.Choice[str]) -> None:
-        self.db.set_timezone(interaction.user.id, tz.value)
-        await interaction.response.send_message(f'Set your timezone to {tz.name} ({tz.value}).', ephemeral=True)
+    @app_commands.describe(tz="Your timezone (e.g. US/Eastern, Europe/London)")
+    @app_commands.autocomplete(tz=autocomplete_timezone)
+    async def set_timezone(self, interaction: discord.Interaction, tz: str) -> None:
+        if tz not in _ALL_TIMEZONES:
+            await interaction.response.send_message(
+                f'"{tz}" is not a valid timezone. Start typing to see suggestions.', ephemeral=True,
+            )
+            return
+        self.db.set_timezone(interaction.user.id, tz)
+        await interaction.response.send_message(f"Set your timezone to {tz}.", ephemeral=True)
 
     @app_commands.command(name="my-timezone", description="Show your saved timezone.")
     async def my_timezone(self, interaction: discord.Interaction) -> None:
