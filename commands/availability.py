@@ -10,7 +10,7 @@ from state import DAY_KEYS, Database, validate_time
 _ALL_TIMEZONES = sorted(available_timezones())
 _ALL_TIMEZONES_SET = set(_ALL_TIMEZONES)
 
-DAY_CHOICES = [app_commands.Choice(name=d, value=d) for d in DAY_KEYS]
+DAY_CHOICES = [app_commands.Choice(name=fmt_day(d), value=d) for d in DAY_KEYS]
 
 
 async def autocomplete_timezone(
