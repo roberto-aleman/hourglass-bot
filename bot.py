@@ -9,7 +9,7 @@ from state import Database
 
 load_dotenv()
 
-log = logging.getLogger("wheatley")
+log = logging.getLogger("hourglass")
 
 TOKEN = os.getenv("DISCORD_TOKEN")
 GUILD_ID = os.getenv("GUILD_ID")
@@ -30,7 +30,7 @@ EXTENSIONS = [
 ]
 
 
-class WheatleyBot(commands.Bot):
+class HourglassBot(commands.Bot):
     def __init__(self) -> None:
         super().__init__(command_prefix="!", intents=discord.Intents.default())
         try:
@@ -64,4 +64,4 @@ if __name__ == "__main__":
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
-    WheatleyBot().run(TOKEN)
+    HourglassBot().run(TOKEN)
