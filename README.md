@@ -60,7 +60,7 @@ A Discord bot for coordinating gaming sessions on a private server. Users save t
 ## Project Structure
 
 ```
-wheatley-bot/
+hourglass-bot/
 ├── bot.py                      # Bot setup and entrypoint (commands.Bot)
 ├── state.py                    # Database class (SQLite), versioned migrations, and pure logic
 ├── commands/
