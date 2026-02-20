@@ -4,7 +4,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from commands.helpers import autocomplete_user_games, SUCCESS_COLOR
+from commands.helpers import autocomplete_user_games, setup_hints, SUCCESS_COLOR
 from state import Database
 
 
@@ -25,10 +25,13 @@ class MatchmakingCog(commands.Cog):
         matches = self.db.find_ready_players(interaction.user.id, now_utc, game_filter=game)
 
         if not matches:
-            if game:
-                message = f'No one is available right now for "{game}".'
+            hints = setup_hints(self.db, interaction.user.id)
+            if hints:
+                message = "You're not fully set up yet:\n" + "\n".join(f"• {h}" for h in hints)
+            elif game:
+                message = f'No one is available right now for "{game}". Try `/next-available` to see when someone will be.'
             else:
-                message = "No one with matching games is available right now."
+                message = "No one with matching games is available right now. Try `/next-available` to see when someone will be."
             await interaction.response.send_message(message, ephemeral=True)
             return
 
@@ -52,9 +55,15 @@ class MatchmakingCog(commands.Cog):
         result = self.db.next_available(target.id, now_utc)
 
         if not result:
-            await interaction.response.send_message(
-                f"{target.mention} has no upcoming availability set.", ephemeral=True,
-            )
+            if target.id == interaction.user.id:
+                hints = setup_hints(self.db, target.id)
+                if hints:
+                    message = "You're not fully set up yet:\n" + "\n".join(f"• {h}" for h in hints)
+                else:
+                    message = "You have no upcoming availability set."
+            else:
+                message = f"{target.mention} has no upcoming availability set."
+            await interaction.response.send_message(message, ephemeral=True)
             return
 
         day, start, end = result

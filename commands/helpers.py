@@ -9,6 +9,20 @@ EMBED_COLOR = 0x5865F2
 SUCCESS_COLOR = 0x57F287
 
 
+def setup_hints(db: Database, user_id: int) -> list[str]:
+    """Return a list of setup steps the user still needs to complete."""
+    hints: list[str] = []
+    if not db.list_games(user_id):
+        hints.append("Add games with `/add-game`")
+    if not db.get_timezone(user_id):
+        hints.append("Set your timezone with `/set-timezone`")
+    else:
+        avail = db.get_availability(user_id)
+        if not any(avail.values()):
+            hints.append("Set your availability with `/set-availability`")
+    return hints
+
+
 class BotClient(Protocol):
     db: Database
     tree: app_commands.CommandTree
