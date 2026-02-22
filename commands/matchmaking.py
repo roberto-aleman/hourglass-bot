@@ -75,9 +75,25 @@ class MatchmakingCog(commands.Cog):
         )
 
     @app_commands.command(name="snooze", description="Temporarily hide from matchmaking until a time today.")
-    @app_commands.describe(until="Time to snooze until")
+    @app_commands.describe(until="Time to snooze until (omit to check status)")
     @app_commands.autocomplete(until=autocomplete_time)
-    async def snooze(self, interaction: discord.Interaction, until: str) -> None:
+    async def snooze(self, interaction: discord.Interaction, until: str | None = None) -> None:
+        if until is None:
+            snooze_val = self.db.get_snooze_until(interaction.user.id)
+            now_utc = datetime.now(timezone.utc)
+            if snooze_val and now_utc.strftime("%Y-%m-%dT%H:%M") < snooze_val:
+                # Convert stored UTC back to user's local time for display
+                tz_name = self.db.get_timezone(interaction.user.id)
+                if tz_name:
+                    local = datetime.strptime(snooze_val, "%Y-%m-%dT%H:%M").replace(tzinfo=timezone.utc).astimezone(ZoneInfo(tz_name))
+                    msg = f"You're snoozed until {fmt_time(local.strftime('%H:%M'))}."
+                else:
+                    msg = "You're currently snoozed."
+            else:
+                msg = "You're not snoozed."
+            await interaction.response.send_message(msg, ephemeral=True)
+            return
+
         tz_name = self.db.get_timezone(interaction.user.id)
         if not tz_name:
             await interaction.response.send_message(
