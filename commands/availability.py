@@ -10,6 +10,24 @@ from state import DAY_KEYS, Database, validate_time
 _ALL_TIMEZONES = sorted(available_timezones())
 _ALL_TIMEZONES_SET = set(_ALL_TIMEZONES)
 
+# Common abbreviations -> IANA timezone for autocomplete friendliness
+_TZ_ALIASES: dict[str, str] = {
+    "PST": "America/Los_Angeles", "PDT": "America/Los_Angeles", "Pacific": "America/Los_Angeles",
+    "MST": "America/Denver", "MDT": "America/Denver", "Mountain": "America/Denver",
+    "CST": "America/Chicago", "CDT": "America/Chicago", "Central": "America/Chicago",
+    "EST": "America/New_York", "EDT": "America/New_York", "Eastern": "America/New_York",
+    "AKST": "America/Anchorage", "AKDT": "America/Anchorage", "Alaska": "America/Anchorage",
+    "HST": "Pacific/Honolulu", "Hawaii": "Pacific/Honolulu",
+    "GMT": "Europe/London", "BST": "Europe/London",
+    "CET": "Europe/Berlin", "CEST": "Europe/Berlin",
+    "EET": "Europe/Bucharest", "EEST": "Europe/Bucharest",
+    "IST": "Asia/Kolkata",
+    "JST": "Asia/Tokyo",
+    "AEST": "Australia/Sydney", "AEDT": "Australia/Sydney",
+}
+# Build searchable list: (display_name, iana_value)
+_TZ_ALIAS_ENTRIES = [(f"{abbr} — {iana}", iana) for abbr, iana in _TZ_ALIASES.items()]
+
 DAY_CHOICES = [app_commands.Choice(name=fmt_day(d), value=d) for d in DAY_KEYS]
 
 # Pre-built 15-minute interval time choices: display "6:00 PM", store "18:00"
@@ -35,10 +53,21 @@ async def autocomplete_timezone(
     interaction: discord.Interaction, current: str,
 ) -> list[app_commands.Choice[str]]:
     lower = current.lower()
-    return [
-        app_commands.Choice(name=tz, value=tz)
-        for tz in _ALL_TIMEZONES if lower in tz.lower()
-    ][:25]
+    results: list[app_commands.Choice[str]] = []
+    seen: set[str] = set()
+    # Abbreviation matches first (PST, Eastern, etc.)
+    for display, iana in _TZ_ALIAS_ENTRIES:
+        if lower in display.lower() and iana not in seen:
+            results.append(app_commands.Choice(name=display, value=iana))
+            seen.add(iana)
+    # Then standard IANA matches
+    for tz in _ALL_TIMEZONES:
+        if lower in tz.lower() and tz not in seen:
+            results.append(app_commands.Choice(name=tz, value=tz))
+            seen.add(tz)
+        if len(results) >= 25:
+            break
+    return results[:25]
 
 
 class AvailabilityCog(commands.Cog):
