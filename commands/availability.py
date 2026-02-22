@@ -79,16 +79,16 @@ class AvailabilityCog(commands.Cog):
         return self.bot.db  # type: ignore[attr-defined]
 
     @app_commands.command(name="set-timezone", description="Set your timezone.")
-    @app_commands.describe(tz="Your timezone (e.g. US/Eastern, Europe/London)")
-    @app_commands.autocomplete(tz=autocomplete_timezone)
-    async def set_timezone(self, interaction: discord.Interaction, tz: str) -> None:
-        if tz not in _ALL_TIMEZONES_SET:
+    @app_commands.describe(timezone="Your timezone (e.g. PST, Eastern, Europe/London)")
+    @app_commands.autocomplete(timezone=autocomplete_timezone)
+    async def set_timezone(self, interaction: discord.Interaction, timezone: str) -> None:
+        if timezone not in _ALL_TIMEZONES_SET:
             await interaction.response.send_message(
-                f'"{tz}" is not a valid timezone. Start typing to see suggestions.', ephemeral=True,
+                f'"{timezone}" is not a valid timezone. Start typing to see suggestions.', ephemeral=True,
             )
             return
-        self.db.set_timezone(interaction.user.id, tz)
-        await interaction.response.send_message(f"Set your timezone to {tz}.", ephemeral=True)
+        self.db.set_timezone(interaction.user.id, timezone)
+        await interaction.response.send_message(f"Set your timezone to {timezone}.", ephemeral=True)
 
     @app_commands.command(name="my-timezone", description="Show your saved timezone.")
     async def my_timezone(self, interaction: discord.Interaction) -> None:
