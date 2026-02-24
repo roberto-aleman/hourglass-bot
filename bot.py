@@ -2,6 +2,7 @@ import logging
 import os
 
 import discord
+from discord import app_commands
 from discord.ext import commands
 from dotenv import load_dotenv
 
@@ -35,6 +36,7 @@ class HourglassBot(commands.Bot):
             raise
 
     async def setup_hook(self) -> None:
+        self.tree.on_error = self.on_app_command_error
         for ext in EXTENSIONS:
             await self.load_extension(ext)
         if TEST_GUILD_ID:
@@ -56,6 +58,16 @@ class HourglassBot(commands.Bot):
     async def close(self) -> None:
         self.db.close()
         await super().close()
+
+    async def on_app_command_error(
+        self, interaction: discord.Interaction, error: app_commands.AppCommandError,
+    ) -> None:
+        log.exception("Unhandled command error", exc_info=error)
+        msg = "Something went wrong. Please try again."
+        if interaction.response.is_done():
+            await interaction.followup.send(msg, ephemeral=True)
+        else:
+            await interaction.response.send_message(msg, ephemeral=True)
 
 
 if __name__ == "__main__":
