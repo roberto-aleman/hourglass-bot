@@ -168,6 +168,7 @@ def test_validate_time_valid() -> None:
     assert validate_time("00:00") is True
     assert validate_time("23:59") is True
     assert validate_time("18:00") is True
+    assert validate_time("24:00") is True
 
 
 def test_validate_time_invalid() -> None:

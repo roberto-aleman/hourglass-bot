@@ -55,7 +55,9 @@ def normalize_game_name(name: str) -> str:
 
 
 def validate_time(t: str) -> bool:
-    """Return True if t is a valid HH:MM time string."""
+    """Return True if t is a valid HH:MM time string (including 24:00)."""
+    if t == "24:00":
+        return True
     try:
         datetime.strptime(t, "%H:%M")
         return True
