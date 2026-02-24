@@ -262,6 +262,70 @@ def test_find_ready_players_no_common_games(db: Database) -> None:
     assert results == []
 
 
+def test_find_ready_players_excludes_snoozed(db: Database) -> None:
+    db.set_timezone(1, "UTC")
+    db.add_game(1, "Helldivers 2")
+
+    db.set_timezone(2, "UTC")
+    db.add_game(2, "Helldivers 2")
+    db.add_day_availability(2, "thu", "10:00", "23:00")
+
+    now_utc = datetime(2026, 2, 19, 15, 0, tzinfo=ZoneInfo("UTC"))
+    db.set_snooze(2, datetime(2026, 2, 19, 20, 0, tzinfo=ZoneInfo("UTC")))
+    results = db.find_ready_players(1, now_utc)
+    assert results == []
+
+
+def test_find_ready_players_includes_expired_snooze(db: Database) -> None:
+    db.set_timezone(1, "UTC")
+    db.add_game(1, "Helldivers 2")
+
+    db.set_timezone(2, "UTC")
+    db.add_game(2, "Helldivers 2")
+    db.add_day_availability(2, "thu", "10:00", "23:00")
+
+    now_utc = datetime(2026, 2, 19, 15, 0, tzinfo=ZoneInfo("UTC"))
+    db.set_snooze(2, datetime(2026, 2, 19, 14, 0, tzinfo=ZoneInfo("UTC")))
+    results = db.find_ready_players(1, now_utc)
+    assert len(results) == 1
+
+
+def test_find_ready_players_overnight_slot(db: Database) -> None:
+    db.set_timezone(1, "UTC")
+    db.add_game(1, "Helldivers 2")
+
+    db.set_timezone(2, "UTC")
+    db.add_game(2, "Helldivers 2")
+    db.add_day_availability(2, "fri", "22:00", "02:00")  # splits into fri 22-24, sat 00-02
+
+    # Friday 23:00 UTC — should match fri 22:00-24:00 slot
+    now_utc = datetime(2026, 2, 20, 23, 0, tzinfo=ZoneInfo("UTC"))
+    results = db.find_ready_players(1, now_utc)
+    assert len(results) == 1
+
+
+def test_set_and_clear_snooze(db: Database) -> None:
+    now = datetime(2026, 2, 19, 15, 0, tzinfo=ZoneInfo("UTC"))
+    until = datetime(2026, 2, 19, 20, 0, tzinfo=ZoneInfo("UTC"))
+
+    assert db.is_snoozed(123, now) is False
+    assert db.get_snooze_until(123) is None
+
+    db.set_snooze(123, until)
+    assert db.is_snoozed(123, now) is True
+    assert db.get_snooze_until(123) == "2026-02-19T20:00"
+
+    db.clear_snooze(123)
+    assert db.is_snoozed(123, now) is False
+    assert db.get_snooze_until(123) is None
+
+
+def test_is_snoozed_expired(db: Database) -> None:
+    db.set_snooze(123, datetime(2026, 2, 19, 14, 0, tzinfo=ZoneInfo("UTC")))
+    now = datetime(2026, 2, 19, 15, 0, tzinfo=ZoneInfo("UTC"))
+    assert db.is_snoozed(123, now) is False
+
+
 def test_user_count(db: Database) -> None:
     assert db.user_count() == 0
     db.set_timezone(1, "UTC")
