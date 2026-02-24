@@ -7,8 +7,7 @@ from state import Database
 
 
 class RemoveGameSelect(discord.ui.Select):
-    def __init__(self, games: list[str], owner_id: int) -> None:
-        self.owner_id = owner_id
+    def __init__(self, games: list[str]) -> None:
         options = [discord.SelectOption(label=game, value=game) for game in games[:25]]
         super().__init__(
             placeholder="Select a game to remove...",
@@ -18,14 +17,10 @@ class RemoveGameSelect(discord.ui.Select):
         )
 
     async def callback(self, interaction: discord.Interaction) -> None:
-        if interaction.user.id != self.owner_id:
-            await interaction.response.send_message("This menu isn't for you.", ephemeral=True)
-            return
-
         bot = get_bot(interaction)
         selected_game = self.values[0]
 
-        removed = bot.db.remove_game(self.owner_id, selected_game)
+        removed = bot.db.remove_game(interaction.user.id, selected_game)
         if removed:
             message = f'Removed "{selected_game}" from your games.'
         else:
@@ -38,7 +33,14 @@ class RemoveGameSelect(discord.ui.Select):
 class RemoveGameView(discord.ui.View):
     def __init__(self, games: list[str], owner_id: int) -> None:
         super().__init__(timeout=60)
-        self.add_item(RemoveGameSelect(games, owner_id))
+        self.owner_id = owner_id
+        self.add_item(RemoveGameSelect(games))
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.owner_id:
+            await interaction.response.send_message("This menu isn't for you.", ephemeral=True)
+            return False
+        return True
 
     async def on_timeout(self) -> None:
         for item in self.children:
